@@ -498,7 +498,17 @@ jobs:
  
           python "$CHAIN_SCRIPT" --header
  
+      - name: Restore saved shaders from earlier runs
+        uses: actions/cache/restore@v4
+        with:
+          path: ${{ runner.temp }}/GameFiles/${{ env.DETECTED_TITLE_ID }}_build/shader
+          key: nxshader-${{ env.DETECTED_TITLE_ID }}-${{ inputs.device == 'iPhone 15 or older (BC fallback)' && 'bc' || 'std' }}-${{ github.run_id }}-${{ github.run_attempt }}
+          restore-keys: |
+            nxshader-${{ env.DETECTED_TITLE_ID }}-${{ inputs.device == 'iPhone 15 or older (BC fallback)' && 'bc' || 'std' }}-
+ 
       - name: Build unsigned IPA
+        id: build
+        timeout-minutes: 300
         shell: bash
         run: |
           set -euo pipefail
@@ -519,6 +529,14 @@ jobs:
  
           echo "IPA successfully created: $OUTPUT"
           ls -lh "$OUTPUT"
+ 
+      - name: Save compiled shaders for the next run
+        if: always() && steps.build.outcome != 'skipped'
+        continue-on-error: true
+        uses: actions/cache/save@v4
+        with:
+          path: ${{ runner.temp }}/GameFiles/${{ env.DETECTED_TITLE_ID }}_build/shader
+          key: nxshader-${{ env.DETECTED_TITLE_ID }}-${{ inputs.device == 'iPhone 15 or older (BC fallback)' && 'bc' || 'std' }}-${{ github.run_id }}-${{ github.run_attempt }}
  
       - name: Upload IPA
         if: success()
