@@ -509,12 +509,32 @@ jobs:
       - name: Build unsigned IPA
         id: build
         timeout-minutes: 300
+        env:
+          GAME_URL: ${{ secrets.Game_URL }}
+          UPDATE_URL: ${{ secrets.Update_URL }}
+          DLC_URL: ${{ secrets.DLC_URL }}
         shell: bash
         run: |
           set -euo pipefail
           WORK="$RUNNER_TEMP/nxnative"
           GAME_DIR="$RUNNER_TEMP/GameFiles"
           OUTPUT="$RUNNER_TEMP/NxNative.ipa"
+
+          # Packages dumped without a ticket are recognised by a [title ID][vN] tag in the file name.
+          # The download step names them game/update/dlc, so take the tag from the Dropbox link.
+          python - "$GAME_DIR" <<'PY'
+          import os, re, sys
+          from pathlib import Path
+          d = Path(sys.argv[1])
+          for label, var in (("game", "GAME_URL"), ("update", "UPDATE_URL"), ("dlc", "DLC_URL")):
+              url = (os.environ.get(var) or "").split("?")[0]
+              m = re.search(r"([0-9A-Fa-f]{16})\W*v(\d+)", url)
+              for p in list(d.glob(label + ".*")):
+                  if m and "[" not in p.name:
+                      new = p.with_name(f"{label} [{m.group(1).upper()}][v{m.group(2)}]{p.suffix}")
+                      p.rename(new)
+                      print(f"Tagged {p.name} -> {new.name}")
+          PY
  
           python scripts/build_ipa_from_nsp.py \
             "$GAME_DIR" \
