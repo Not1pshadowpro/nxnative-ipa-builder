@@ -1,0 +1,146 @@
+name: NxNative - Switch 2 IPA Builder (experimental)
+
+on:
+  workflow_dispatch:
+    inputs:
+      nxnative_ref:
+        description: "nxnative branch or commit to build with (main = newest)"
+        required: true
+        type: string
+        default: "main"
+      romfs:
+        description: "bundle = game files inside the IPA; separate = copied to the device afterwards"
+        required: true
+        type: choice
+        default: "bundle"
+        options:
+          - bundle
+          - separate
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: macos-latest
+    timeout-minutes: 360
+
+    steps:
+      - name: Checkout nxnative
+        uses: actions/checkout@v4
+        with:
+          repository: seedds/nxnative
+          ref: ${{ inputs.nxnative_ref }}
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+
+      - name: Set up .NET SDK
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: "10.0.x"
+
+      - name: Install dependencies
+        shell: bash
+        run: |
+          set -euo pipefail
+          xcodebuild -version
+          xcodebuild -downloadComponent MetalToolchain || true
+          brew install glslang xcodegen zstd spirv-cross unar
+          python -m pip install --upgrade pip
+          python -m pip install \
+            lz4 "capstone>=5,<6" fonttools nsz zbic backports.zstd gdown
+
+      - name: Download the game's NUP
+        env:
+          NUP_URL: ${{ secrets.NUP_URL }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [[ -z "${NUP_URL:-}" ]]; then
+            echo "::error::The NUP_URL secret is empty."
+            exit 1
+          fi
+          GAME_DIR="$RUNNER_TEMP/GameFiles"
+          mkdir -p "$GAME_DIR"
+          for attempt in 1 2 3; do
+            if gdown --continue "$NUP_URL" -O "$GAME_DIR/game.nup" \
+              && [[ -s "$GAME_DIR/game.nup" ]]; then
+              ls -lh "$GAME_DIR/game.nup"
+              exit 0
+            fi
+            echo "Download attempt $attempt failed; retrying..."
+            sleep $((attempt * 10))
+          done
+          echo "::error::Failed to download the NUP after 3 attempts."
+          exit 1
+
+      - name: Update shader toolchain header
+        shell: bash
+        run: |
+          set -euo pipefail
+          python dm/gfx/tools/dmsh_chain.py --header
+
+      - name: Restore saved shaders from earlier runs
+        uses: actions/cache/restore@v4
+        with:
+          path: ${{ runner.temp }}/GameFiles/*_build/shader
+          key: nx2shader-${{ github.run_id }}-${{ github.run_attempt }}
+          restore-keys: |
+            nx2shader-
+
+      - name: Build unsigned IPA
+        id: build
+        timeout-minutes: 300
+        shell: bash
+        run: |
+          set -euo pipefail
+          GAME_DIR="$RUNNER_TEMP/GameFiles"
+          OUTPUT="$RUNNER_TEMP/NxNative.ipa"
+
+          python scripts/build_ipa_from_nsp.py \
+            "$GAME_DIR" \
+            --platform ios \
+            --romfs "${{ inputs.romfs }}" \
+            --allow-other-metal \
+            -o "$OUTPUT"
+
+          if [[ ! -s "$OUTPUT" ]]; then
+            echo "::error::IPA build did not produce an output file."
+            exit 1
+          fi
+          ls -lh "$OUTPUT"
+
+      - name: Save compiled shaders for the next run
+        if: always() && steps.build.outcome != 'skipped'
+        continue-on-error: true
+        uses: actions/cache/save@v4
+        with:
+          path: ${{ runner.temp }}/GameFiles/*_build/shader
+          key: nx2shader-${{ github.run_id }}-${{ github.run_attempt }}
+
+      - name: Upload IPA
+        if: success()
+        uses: actions/upload-artifact@v4
+        with:
+          name: NxNative-Switch2-IPA
+          path: ${{ runner.temp }}/NxNative.ipa
+          if-no-files-found: error
+          retention-days: 7
+
+      - name: Upload build logs if available
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: NxNative-Switch2-Build-Logs
+          path: |
+            ${{ runner.temp }}/GameFiles/*_build/logs/
+          if-no-files-found: ignore
+          retention-days: 7
+
+      - name: Clean up downloaded files
+        if: always()
+        shell: bash
+        run: rm -rf "$RUNNER_TEMP/GameFiles"
