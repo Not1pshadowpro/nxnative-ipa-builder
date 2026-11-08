@@ -42,6 +42,19 @@ jobs:
           sed -i '' '/g_motion.deviceMotionBody = body;/d' dm/ios/Sources/DmGamepad.m
           echo "Remaining offset lines: $(grep -c 'ContentOffsetX' dm/gfx/nvn/nvn_mtl.m || true)"
 
+      - name: Free up disk space
+        shell: bash
+        run: |
+          df -h /
+          SEL="$(cd "$(xcode-select -p)/../.." && pwd -P)"
+          echo "Keeping $SEL"
+          for x in /Applications/Xcode*.app; do
+            [[ "$(cd "$x" && pwd -P)" == "$SEL" ]] || sudo rm -rf "$x" &
+          done
+          sudo rm -rf ~/Library/Android /usr/local/lib/android ~/.ghcup "$HOME/Library/Developer/CoreSimulator/Caches" &
+          wait
+          df -h /
+
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
