@@ -32,6 +32,16 @@ jobs:
           repository: seedds/nxnative
           ref: ${{ inputs.nxnative_ref }}
 
+      - name: Patch for the runner's older iOS SDK
+        shell: bash
+        run: |
+          # MetalFX's content offsets exist only in the iOS 27 SDK; nxnative uses them only on iOS 27
+          # (all zero in the games seen), so drop those lines when the runner's SDK lacks them.
+          sed -i '' -E '/sc\.(colorContentOffsetX|depthContentOffsetX|motionContentOffsetX|outputOffsetX) = /d' dm/gfx/nvn/nvn_mtl.m
+          # CMMotionManager.deviceMotionBody is iOS 27 SDK only too (phone gyro frame); the older frame is used without it.
+          sed -i '' '/g_motion.deviceMotionBody = body;/d' dm/ios/Sources/DmGamepad.m
+          echo "Remaining offset lines: $(grep -c 'ContentOffsetX' dm/gfx/nvn/nvn_mtl.m || true)"
+
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
