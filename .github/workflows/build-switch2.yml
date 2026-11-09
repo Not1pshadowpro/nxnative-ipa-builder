@@ -132,12 +132,22 @@ jobs:
           MON=$!
           trap 'kill $MON 2>/dev/null || true' EXIT
 
+          EXTRA=()
+          if [[ "${{ inputs.romfs }}" == separate ]]; then EXTRA+=(--keep-extracted); fi
           python scripts/build_ipa_from_nsp.py \
             "$GAME_DIR" \
             --platform ios \
             --romfs "${{ inputs.romfs }}" \
             --allow-other-metal \
+            "${EXTRA[@]}" \
             -o "$OUTPUT"
+
+          if [[ "${{ inputs.romfs }}" == separate ]]; then
+            IMG="$(ls -t "$GAME_DIR"/*_build/extract/*/RomFS.img | head -1)"
+            mkdir -p "$RUNNER_TEMP/romfs"
+            mv "$IMG" "$RUNNER_TEMP/romfs/romfs.img"
+            ls -lh "$RUNNER_TEMP/romfs/romfs.img"
+          fi
 
           if [[ ! -s "$OUTPUT" ]]; then
             echo "::error::IPA build did not produce an output file."
@@ -160,6 +170,16 @@ jobs:
           name: NxNative-Switch2-IPA
           path: ${{ runner.temp }}/NxNative.ipa
           if-no-files-found: error
+          retention-days: 7
+
+      - name: Upload game files (separate mode)
+        if: success() && inputs.romfs == 'separate'
+        uses: actions/upload-artifact@v4
+        with:
+          name: NxNative-Switch2-GameFiles
+          path: ${{ runner.temp }}/romfs/romfs.img
+          if-no-files-found: error
+          compression-level: 0
           retention-days: 7
 
       - name: Upload build logs if available
