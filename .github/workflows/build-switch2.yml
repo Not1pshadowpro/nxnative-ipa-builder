@@ -52,6 +52,12 @@ jobs:
             [[ "$(cd "$x" && pwd -P)" == "$SEL" ]] || sudo rm -rf "$x" &
           done
           sudo rm -rf ~/Library/Android /usr/local/lib/android ~/.ghcup "$HOME/Library/Developer/CoreSimulator/Caches" &
+          for d in "$RUNNER_TOOL_CACHE"/*; do
+            [[ "$(basename "$d")" == Python ]] || sudo rm -rf "$d" &
+          done
+          xcrun simctl runtime delete all 2>/dev/null || true
+          sudo rm -rf /Library/Developer/CoreSimulator/Images /Library/Developer/CoreSimulator/Volumes 2>/dev/null &
+          brew cleanup -s 2>/dev/null || true
           wait
           df -h /
 
@@ -122,6 +128,11 @@ jobs:
           set -euo pipefail
           GAME_DIR="$RUNNER_TEMP/GameFiles"
           OUTPUT="$RUNNER_TEMP/NxNative.ipa"
+          ( while sleep 60; do
+              echo "[monitor] disk free: $(df -h / | awk 'NR==2{print $4}') | $(memory_pressure 2>/dev/null | tail -1)"
+            done ) &
+          MON=$!
+          trap 'kill $MON 2>/dev/null || true' EXIT
 
           python scripts/build_ipa_from_nsp.py \
             "$GAME_DIR" \
