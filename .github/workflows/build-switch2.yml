@@ -110,9 +110,9 @@ jobs:
         uses: actions/cache/restore@v4
         with:
           path: ${{ runner.temp }}/GameFiles/*_build/shader
-          key: nx2shader-${{ github.run_id }}-${{ github.run_attempt }}
+          key: nx3shader-${{ github.run_id }}-${{ github.run_attempt }}
           restore-keys: |
-            nx2shader-
+            nx3shader-
 
       - name: Build unsigned IPA
         id: build
@@ -142,7 +142,7 @@ jobs:
         uses: actions/cache/save@v4
         with:
           path: ${{ runner.temp }}/GameFiles/*_build/shader
-          key: nx2shader-${{ github.run_id }}-${{ github.run_attempt }}
+          key: nx3shader-${{ github.run_id }}-${{ github.run_attempt }}
 
       - name: Upload IPA
         if: success()
